@@ -1,0 +1,127 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<title>Конвертер v1.4: draw.io → портал HTML (МФиНП)</title>
+<style>body{font-family:Arial;margin:20px;max-width:900px}button{padding:10px 18px;margin:8px 8px 8px 0}
+#msg{color:#0a7a34;font-weight:bold}#dbg{color:#a00;white-space:pre-wrap}.r{margin:10px 0}select{max-width:480px}</style></head><body>
+<h3>Конвертер v1.4: мастер-файл .drawio → интерактивный portal.html (без lightbox)</h3>
+<div class="r">1) Выберите мастер-файл .drawio: <input type="file" id="f" accept=".drawio,.xml,.html"></div>
+<div class="r">Заголовок портала: <input id="ttl" size="46" value="Функциональная карта МФиНП НСО"><br>
+Стартовая страница: <select id="def"><option>— сначала выберите файл —</option></select></div>
+<div class="r"><button onclick="go()">Собрать и скачать portal.html</button><span id="msg"></span></div>
+<div id="dbg"></div>
+<div style="color:#555">Портал кладите в одну папку с viewer.min.js. Ошибки (если будут) пишутся красным в шапке портала.</div>
+
+<script type="text/plain" id="portaljs">
+var DATA="__DATA__";var DEF=__DEF__;var PAGES=[];var cur=-1;
+function showErr(t){var e=document.getElementById("err");if(e){e.textContent=t;}}
+window.onerror=function(m,s,l){showErr("Ошибка JS: "+m+" (строка "+l+")");};
+function dec(d){var bin=atob(d);var b=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++){b[i]=bin.charCodeAt(i);}return new TextDecoder().decode(b);}
+try{PAGES=JSON.parse(dec(DATA));}catch(e){showErr("Ошибка разбора данных: "+e.message);}
+function viewerDoc(p){
+ var cfg={xml:p.xml,toolbar:"zoom",nav:false,resize:true,lightbox:false,page:0};
+ var j=JSON.stringify(cfg).replace(/&/g,"&amp;").replace(/'/g,"&#39;");
+ return '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;overflow:hidden;background:#fff}</style></head><body>'
+  +'<div class="mxgraph" style="max-width:100%;border:0;" data-mxgraph=\''+j+'\'></div>'
+  +'<script src="viewer.min.js"><\/script>'
+  +'<script>if(!window.GraphViewer){document.write("<script src=\"https://viewer.diagrams.net/js/viewer.min.js\"><\/script>");}<\/script>'
+  +'<script>function rep(){var h=location.hash;if(h.indexOf("#go=")===0){parent.postMessage({go:h.slice(4)},"*");}}window.addEventListener("load",rep);window.addEventListener("hashchange",rep);<\/script>'
+  +'</body></html>';
+}
+function show(i){if(i<0||i>=PAGES.length||i===cur)return;cur=i;
+ var fr=document.getElementById("view");
+ fr.onload=function(){var d=fr.contentDocument;if(!d)return;
+  d.addEventListener("click",function(e){var t=e.target;
+   while(t&&t.tagName&&t.tagName.toUpperCase()!=="A"){t=t.parentNode;}
+   if(t){var hr=t.getAttribute&&((t.getAttribute("href")||t.getAttribute("xlink:href"))||"");
+    if(hr.indexOf("#go=")===0){e.preventDefault();var k=byId(hr.slice(4));if(k>=0){show(k);}}}},true);};
+ fr.srcdoc=viewerDoc(PAGES[i]);
+ var ds=document.querySelectorAll("#list div");for(var k=0;k<ds.length;k++){ds[k].className=(+ds[k].dataset.i===i)?"on":"";}
+ if(location.hash!=="#p="+PAGES[i].id){location.hash="#p="+PAGES[i].id;}
+}
+function byId(id){for(var i=0;i<PAGES.length;i++){if(PAGES[i].id===id)return i;}return -1;}
+window.addEventListener("message",function(e){if(e.data&&e.data.go){var i=byId(e.data.go);if(i>=0)show(i);}});
+window.addEventListener("hashchange",function(){if(location.hash.indexOf("#p=")===0){var i=byId(location.hash.slice(3));if(i>=0)show(i);}});
+var list=document.getElementById("list");
+PAGES.forEach(function(p,i){var d=document.createElement("div");d.dataset.i=i;d.textContent=p.name;d.onclick=function(){show(i);};list.appendChild(d);});
+document.getElementById("q").addEventListener("input",function(){var v=this.value.toLowerCase();var ds=list.children;for(var k=0;k<ds.length;k++){ds[k].style.display=(ds[k].textContent.toLowerCase().indexOf(v)>=0)?"":"none";}});
+var h0=(location.hash.indexOf("#p=")===0)?byId(location.hash.slice(3)):-1;show(h0>=0?h0:DEF);
+</script>
+
+<script>
+var PAGES=[];
+function unesc(s){return s.replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');}
+function rewrite(b){return b.replace(/link="data:page\/id,([^"]+)"/g,'link="#go=$1"');}
+function bodyOf(di){
+ var raw=(di.textContent||'').trim();
+ if(raw){return raw;}
+ var ser=new XMLSerializer(),s='',c;
+ for(c=di.firstChild;c;c=c.nextSibling){if(c.nodeType===1){s+=ser.serializeToString(c);}}
+ return s;}
+async function inflate(b64){
+ var bin;try{bin=Uint8Array.from(atob(b64.replace(/\s/g,'')),function(c){return c.charCodeAt(0);});}catch(e){return null;}
+ var fmt=['deflate-raw','deflate','gzip'];
+ for(var i=0;i<fmt.length;i++){
+  try{var dsr=new DecompressionStream(fmt[i]);
+      var st=new Blob([bin]).stream().pipeThrough(dsr);
+      return await new Response(st).text();}catch(e){}}
+ return null;}
+function b64utf8(s){var b=new TextEncoder().encode(s);var bin='';var CH=0x8000;
+ for(var i=0;i<b.length;i+=CH){bin+=String.fromCharCode.apply(null,b.subarray(i,i+CH));}return btoa(bin);}
+document.getElementById('f').addEventListener('change',async function(e){
+ var file=e.target.files[0];if(!file)return;
+ PAGES=[];document.getElementById('dbg').textContent='';
+ var txt=await file.text();
+ var info={parsererror:false,diags:0,plain:0,inflated:0,failed:0,mxgraph:false};
+ var bodies=[];
+ var doc=new DOMParser().parseFromString(txt,'text/xml');
+ if(doc.getElementsByTagName('parsererror').length){info.parsererror=true;}
+ var ds=doc.getElementsByTagName('diagram');
+ for(var i=0;i<ds.length;i++){bodies.push({name:ds[i].getAttribute('name')||('Страница '+(i+1)),
+   id:ds[i].getAttribute('id')||('p'+i),body:bodyOf(ds[i])});}
+ if(!bodies.length){
+  var re=/<diagram\b([^>]*)>([\s\S]*?)<\/diagram>/g,m;
+  while((m=re.exec(txt))!==null){var an=/name="([^"]*)"/.exec(m[1]),ai=/id="([^"]*)"/.exec(m[1]);
+   bodies.push({name:an?unesc(an[1]):('Страница '+(bodies.length+1)),id:ai?ai[1]:('p'+bodies.length),body:m[2]});}}
+ if(!bodies.length&&txt.indexOf('data-mxgraph=')>=0){
+  info.mxgraph=true;var mg=/data-mxgraph="([^"]+)"/.exec(txt);
+  if(mg){try{var cfg=JSON.parse(unesc(mg[1])),cx=cfg.xml||'';
+    if(cx.indexOf('<diagram')>=0){var d2=new DOMParser().parseFromString(cx,'text/xml');
+      var ds2=d2.getElementsByTagName('diagram');
+      for(var k=0;k<ds2.length;k++){bodies.push({name:ds2[k].getAttribute('name')||('Страница '+(k+1)),
+        id:ds2[k].getAttribute('id')||('p'+k),body:bodyOf(ds2[k])});}}
+    else if(cx){bodies.push({name:cfg.title||'Страница 1',id:'p0',body:cx});}
+   }catch(err){}}}
+ info.diags=bodies.length;
+ for(var b=0;b<bodies.length;b++){
+  var body=(bodies[b].body||'').trim();if(!body){continue;}
+  if(body.charAt(0)==='<'){info.plain++;PAGES.push({id:bodies[b].id,name:bodies[b].name,xml:rewrite(body)});}
+  else{var x=await inflate(body);
+   if(x){info.inflated++;PAGES.push({id:bodies[b].id,name:bodies[b].name,xml:rewrite(x)});}
+   else{info.failed++;}}}
+ var sel=document.getElementById('def');sel.innerHTML='';
+ PAGES.forEach(function(p,i){var o=document.createElement('option');o.value=i;o.textContent=p.name;sel.appendChild(o);});
+ document.getElementById('msg').textContent='Страниц распознано: '+PAGES.length+
+  ' (блоков в файле: '+info.diags+'; без сжатия: '+info.plain+'; распаковано: '+info.inflated+
+  '; ошибок распаковки: '+info.failed+')'+(info.parsererror?' [XML с ошибками — применён резервный разбор]':'')+
+  (info.mxgraph?' [найден viewer-HTML]':'')+'.';
+ if(!PAGES.length){document.getElementById('dbg').textContent='Файл начинается с:\n'+txt.slice(0,300);}
+});
+function go(){
+ if(!PAGES.length){alert('Сначала выберите файл .drawio и дождитесь распознавания страниц');return;}
+ var ttl=document.getElementById('ttl').value||'Функциональная карта';
+ var def=+document.getElementById('def').value||0;
+ var DATA=b64utf8(JSON.stringify(PAGES));
+ var js=document.getElementById('portaljs').textContent.replace('__DATA__',DATA).replace('__DEF__',String(def));
+ var html='<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>'+ttl.replace(/</g,'&lt;')+'</title>\n'+
+ '<style>html,body{margin:0;height:100%;font-family:Arial}#wrap{display:flex;height:100%}\n'+
+ '#side{width:300px;min-width:260px;border-right:1px solid #ccc;overflow:auto;background:#f7f9fc;padding:10px;box-sizing:border-box}\n'+
+ '#q{width:100%;box-sizing:border-box;padding:6px;margin-bottom:8px}\n'+
+ '#list div{padding:5px 7px;border-radius:4px;cursor:pointer;font-size:13px}#list div:hover{background:#e3edfb}#list div.on{background:#4a90e2;color:#fff}\n'+
+ '#view{flex:1;border:0;background:#fff}header{padding:8px 14px;background:#2c5aa0;color:#fff;font-weight:bold;font-size:15px}#err{color:#ffd;font-weight:normal}</style></head><body>\n'+
+ '<header>'+ttl.replace(/</g,'&lt;')+' <span id="err"></span></header>\n'+
+ '<div id="wrap"><div id="side"><input id="q" placeholder="Поиск по названию страницы..."><div id="list"></div></div>\n'+
+ '<iframe id="view"></iframe></div>\n<script>\n'+js+'\n<\/script></body></html>';
+ var bl=new Blob([html],{type:'text/html'});var a=document.createElement('a');
+ a.href=URL.createObjectURL(bl);a.download='portal.html';a.click();
+ setTimeout(function(){URL.revokeObjectURL(a.href);},2000);
+ document.getElementById('msg').textContent='Готово: portal.html (страниц: '+PAGES.length+', размер ~'+Math.round(html.length/1048576*10)/10+' МБ).';}
+</script></body></html>
